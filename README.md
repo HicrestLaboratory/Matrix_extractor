@@ -68,21 +68,4 @@ Each entry in the `models` dictionary contains:
 * **`has_bias`**: A boolean flag for the presence of a bias vector.
 * **`parameters`**: The sum of the weight elements and bias elements.
 
----
-
-## Execution Summary
-
-When the script completes, it prints a scannable table to the console:
-
-```text
-==========================================================================================
-Model Name                     | Matrix Count    | Total Matrix Params
-------------------------------------------------------------------------------------------
-gpt2                           | 38              | 124,439,808
-vit_b_16                       | 152             | 85,798,656
-mistralai/Mistral-7B-v0.1      | 226             | 7,241,732,096
-==========================================================================================
-
-```
-
-Would you like me to add a section to this README on how to use the generated JSON to calculate the theoretical memory bandwidth required for a forward pass?
+--
