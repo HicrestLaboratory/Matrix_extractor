@@ -45,16 +45,6 @@ class FullTransformerMatrixExtractor:
             except Exception as e:
                 print(f"  ✗ Failed to load {name}: {e}")
 
-    def _get_max_seq_length(self, model, model_name: str) -> int:
-        if model_name.startswith('vit_'):
-            vit_configs = {'vit_b_16': 197, 'vit_l_16': 197, 'vit_h_14': 257}
-            return vit_configs.get(model_name, 197)
-        
-        if hasattr(model, 'config'):
-            return getattr(model.config, 'max_position_embeddings', 
-                   getattr(model.config, 'n_positions', "unknown"))
-        return "unknown"
-
     def _is_linear_layer(self, module) -> bool:
         return isinstance(module, (nn.Linear, nn.modules.linear.NonDynamicallyQuantizableLinear)) or \
                module.__class__.__name__ == 'Conv1D'
@@ -64,7 +54,6 @@ class FullTransformerMatrixExtractor:
         models_data = {}
         
         for model_name, model in self.models.items():
-            max_seq_len = self._get_max_seq_length(model, model_name)
             matrices = []
             
             # Iterate through all modules without deduplication
@@ -80,7 +69,6 @@ class FullTransformerMatrixExtractor:
                 
                 matrices.append({
                     "layer_name": layer_name,
-                    "input_shape": ["batch_size", max_seq_len, in_features],
                     "weight_shape": [out_features, in_features],
                     "has_bias": has_bias,
                     "bias_shape": bias_shape,
@@ -89,7 +77,6 @@ class FullTransformerMatrixExtractor:
             
             models_data[model_name] = {
                 "total_matrices": len(matrices),
-                "max_sequence_length": max_seq_len,
                 "matrices": matrices
             }
         

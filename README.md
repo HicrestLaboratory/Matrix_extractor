@@ -1,88 +1,192 @@
-This tool performs a deep architectural sweep of Transformer-based models (NLP and Vision) to extract every single weight matrix and bias vector. Unlike standard parameter counters, this script maps the **full tensor path** and **mathematical shapes** of every linear transformation in the model.
+# Transformer Matrix Extractor
 
-## How It Works
+A Python tool for extracting and analyzing all weight matrices from transformer models (GPT, BERT, ViT, Mistral, etc.). This tool provides detailed information about every linear layer in your model, including weight shapes, bias information, and parameter counts.
 
-The extractor follows a three-stage process to map the model's internal geometry:
+## Features
 
-### 1. Model Loading & Detection
+- Extracts **all** weight matrices from transformer models
+- Supports multiple model architectures (GPT-2, BERT, ViT, Mistral)
+- Preserves full layer paths for precise identification
+- Exports results to JSON for further analysis
+- Provides summary statistics
 
-The script initializes models from **HuggingFace Transformers** or **Torchvision**. It identifies the model type (Causal LM, Encoder, or Vision Transformer) to correctly determine the maximum sequence length or patch count, which defines the "context shape" of the data flowing into each matrix.
+## Installation
 
-### 2. Recursive Module Traversal
+```bash
+pip install torch transformers torchvision
+```
 
-Instead of looking at a high-level summary, the tool uses `model.named_modules()` to visit every individual component. It specifically targets:
+## Usage
 
-* `nn.Linear`: Standard dense layers found in BERT, ViT, and Mistral.
-* `Conv1D`: The 1D convolution layers used in GPT-2 architectures as linear projections.
-* `NonDynamicallyQuantizableLinear`: Specialized linear layers often found in attention mechanisms.
+### Basic Usage (Default Models)
 
-### 3. Metadata Extraction
+Run the extractor with default models:
 
-For every layer identified, the tool extracts:
+```bash
+python transformer_extractor.py
+```
 
-* **The Absolute Path**: The exact location in the hierarchy (e.g., `transformer.h.11.mlp.c_fc`).
-* **Weight Geometry**: The  dimensions.
-* **Bias Presence**: Whether the layer utilizes an additive bias vector and its shape.
-* **Parameter Count**: Total elements () for that specific matrix.
+This will analyze the following models:
+- GPT-2 (all variants: base, medium, large, xl)
+- Vision Transformer (vit_b_16, vit_l_16, vit_h_14)
+- Mistral-7B
+- BERT (base and large)
 
----
+### Custom Models
+
+Specify which models to analyze:
+
+```bash
+python transformer_extractor.py --models gpt2 bert-base-uncased
+```
+
+### Custom Output File
+
+Change the output JSON filename:
+
+```bash
+python transformer_extractor.py --output my_analysis.json
+```
+
+### Combined Options
+
+```bash
+python transformer_extractor.py --models gpt2 gpt2-medium --output gpt2_matrices.json
+```
 
 ## Output Format
 
-The output is a structured JSON file organized by model name. Below is a breakdown of the schema:
+### Console Output
 
-### Root Object
-
-| Key | Description |
-| --- | --- |
-| `total_models` | Number of models processed in the execution. |
-| `models` | A dictionary where keys are model names and values are the model's data. |
-
-### Model Object
-
-Each entry in the `models` dictionary contains:
-
-* `total_matrices`: The count of every linear transformation in the model.
-* `max_sequence_length`: The token/patch limit (defines the middle dimension of the input).
-* `matrices`: A list of objects, one for every matrix instance.
-
-### Matrix Object Example
-
-```json
-{
-  "layer_name": "transformer.h.0.mlp.c_fc",
-  "input_shape": ["batch_size", 1024, 768],
-  "weight_shape": [3072, 768],
-  "has_bias": true,
-  "bias_shape": [3072],
-  "parameters": 2362368
-}
+The tool prints a summary table:
 
 ```
-
-#### Field Definitions:
-
-* **`layer_name`**: The unique identifier for the matrix. The index (e.g., `.0.`) indicates which transformer block the matrix belongs to.
-* **`input_shape`**: The shape of the activations entering the layer, usually represented as .
-* **`weight_shape`**: The dimensions of the weight matrix itself.
-* **`has_bias`**: A boolean flag for the presence of a bias vector.
-* **`parameters`**: The sum of the weight elements and bias elements.
-
----
-
-## Execution Summary
-
-When the script completes, it prints a scannable table to the console:
-
-```text
 ==========================================================================================
 Model Name                     | Matrix Count    | Total Matrix Params
 ------------------------------------------------------------------------------------------
-gpt2                           | 38              | 124,439,808
-vit_b_16                       | 152             | 85,798,656
-mistralai/Mistral-7B-v0.1      | 226             | 7,241,732,096
+gpt2                           | 148             | 124,439,808
+bert-base-uncased              | 199             | 109,482,240
 ==========================================================================================
-
 ```
 
-Would you like me to add a section to this README on how to use the generated JSON to calculate the theoretical memory bandwidth required for a forward pass?
+### JSON Output
+
+The JSON file contains detailed information for each matrix:
+
+```json
+{
+  "total_models": 2,
+  "models": {
+    "gpt2": {
+      "total_matrices": 148,
+      "matrices": [
+        {
+          "layer_name": "transformer.wte",
+          "weight_shape": [50257, 768],
+          "has_bias": false,
+          "bias_shape": null,
+          "parameters": 38597376
+        },
+        {
+          "layer_name": "transformer.h.0.attn.c_attn",
+          "weight_shape": [768, 2304],
+          "has_bias": true,
+          "bias_shape": [2304],
+          "parameters": 1771776
+        }
+      ]
+    }
+  }
+}
+```
+
+### Output Fields Explained
+
+- **layer_name**: Full path to the layer in the model (e.g., `transformer.h.0.attn.c_attn`)
+- **weight_shape**: Dimensions of the weight matrix `[out_features, in_features]`
+- **has_bias**: Boolean indicating if the layer has a bias term
+- **bias_shape**: Shape of the bias vector (if present)
+- **parameters**: Total parameter count for this layer (weights + bias)
+
+## Understanding the Results
+
+### Weight Shape Format
+
+Weight matrices are stored as `[out_features, in_features]`:
+- **out_features**: Number of output dimensions
+- **in_features**: Number of input dimensions
+
+For example, a shape of `[2304, 768]` means:
+- Takes 768-dimensional input
+- Produces 2304-dimensional output
+
+### Common Layer Types
+
+**Attention Layers** (e.g., `h.0.attn.c_attn`):
+- Combined Q, K, V projection in GPT-2
+- Shape: `[hidden_dim, 3 * hidden_dim]`
+
+**Feed-Forward Layers** (e.g., `h.0.mlp.c_fc`):
+- MLP expansion layer
+- Typically `[hidden_dim, 4 * hidden_dim]`
+
+**Output Projections** (e.g., `h.0.attn.c_proj`):
+- Projects back to model dimension
+- Shape: `[hidden_dim, hidden_dim]`
+
+## Use Cases
+
+1. **Model Analysis**: Understand the architecture and parameter distribution
+2. **Research**: Study how different models structure their weights
+3. **Optimization**: Identify large matrices for compression or pruning
+4. **Education**: Learn transformer architecture by examining real models
+5. **Debugging**: Verify model structure matches expectations
+
+## Supported Models
+
+### Language Models
+- GPT-2 family (gpt2, gpt2-medium, gpt2-large, gpt2-xl)
+- BERT family (bert-base-uncased, bert-large-uncased)
+- Mistral (mistralai/Mistral-7B-v0.1)
+- Any HuggingFace transformer model
+
+### Vision Models
+- Vision Transformer (vit_b_16, vit_l_16, vit_h_14)
+
+### Adding Custom Models
+
+Modify the `DEFAULT_MODELS` list in the code or pass custom model names via `--models`:
+
+```python
+DEFAULT_MODELS = [
+    "your-model-name",
+    "organization/model-name",
+]
+```
+
+## Requirements
+
+- Python 3.7+
+- PyTorch
+- Transformers (HuggingFace)
+- TorchVision (for ViT models)
+
+## Performance Notes
+
+- Large models (like Mistral-7B) may take several minutes to load
+- Models are loaded on CPU by default
+- JSON files can be large for models with many layers
+
+## Troubleshooting
+
+**Model fails to load**: Some models may require authentication or special access. Use HuggingFace CLI to login:
+```bash
+huggingface-cli login
+```
+
+**Out of memory**: For very large models, ensure you have sufficient RAM (16GB+ recommended for 7B+ models)
+
+**Missing dependencies**: Install all requirements:
+```bash
+pip install torch transformers torchvision
+```
